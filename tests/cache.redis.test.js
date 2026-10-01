@@ -32,7 +32,12 @@ class FakeRedisClient {
     const keys = values.slice(0, numberOfKeys);
     const args = values.slice(numberOfKeys);
     if (script.includes('redis-cache:read')) {
-      return [this.map.get(keys[0]) ?? null, this.map.get(keys[1]) ?? '0'];
+      let generation = this.map.get(keys[1]);
+      if (!generation) {
+        generation = args[0];
+        this.map.set(keys[1], generation);
+      }
+      return [this.map.get(keys[0]) ?? null, generation];
     }
     if (script.includes('redis-cache:write')) {
       const [expectedGeneration, payload, _ttl, incomingLedger] = args;
@@ -64,10 +69,9 @@ class FakeRedisClient {
       return 0;
     }
     if (script.includes('redis-cache:invalidate')) {
-      const generation = Number(this.map.get(keys[0]) ?? '0') + 1;
-      this.map.set(keys[0], String(generation));
+      this.map.set(keys[0], args[0]);
       this.map.delete(keys[1]);
-      return generation;
+      return 1;
     }
     throw new Error('Unsupported Redis script');
   }

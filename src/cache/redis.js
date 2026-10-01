@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomUUID } = require('crypto');
 const { CircuitBreaker } = require('../utils/circuitBreaker');
 const { redisCacheFailOpenTotal } = require('../metrics');
 
@@ -56,7 +57,14 @@ const MIN_TIMEOUT_MS = 50;
 const MAX_TIMEOUT_MS = 5000;
 
 const READ_CACHE_SCRIPT = `-- redis-cache:read
-return { redis.call('GET', KEYS[1]) or false, redis.call('GET', KEYS[2]) or '0' }
+local generation = redis.call('GET', KEYS[2])
+if not generation then
+  generation = ARGV[1]
+  redis.call('SET', KEYS[2], generation, 'PX', ARGV[2])
+else
+  redis.call('PEXPIRE', KEYS[2], ARGV[2])
+end
+return { redis.call('GET', KEYS[1]) or false, generation }
 `;
 const WRITE_CACHE_SCRIPT = `-- redis-cache:write
 local generation = redis.call('GET', KEYS[2]) or '0'
@@ -80,9 +88,9 @@ end
 return 0
 `;
 const INVALIDATE_CACHE_SCRIPT = `-- redis-cache:invalidate
-local generation = redis.call('INCR', KEYS[1])
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
 redis.call('DEL', KEYS[2])
-return generation
+return 1
 `;
 
 
@@ -256,7 +264,9 @@ class RedisEscrowSummaryCache {
             READ_CACHE_SCRIPT,
             2,
             key,
-            this.generationKey(invoiceId)
+            this.generationKey(invoiceId),
+            randomUUID(),
+            String(Math.max(1, this.ttlSeconds * 1000))
           ),
           this.timeoutMs
         )
@@ -384,7 +394,9 @@ class RedisEscrowSummaryCache {
             INVALIDATE_CACHE_SCRIPT,
             2,
             this.generationKey(invoiceId),
-            this.key(invoiceId)
+            this.key(invoiceId),
+            randomUUID(),
+            String(Math.max(1, this.ttlSeconds * 1000))
           ),
           this.timeoutMs
         )
