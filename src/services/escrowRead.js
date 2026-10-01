@@ -680,12 +680,14 @@ async function getEscrowStateWithProjection(invoiceId, options = {}) {
   }
 
   // Try cache first if enabled
+  let cacheGeneration;
   if (cache) {
     const cacheResult = await cache.getSummary(safeId);
     if (cacheResult.hit) {
       escrowReadCache.set(safeId, cacheResult.value);
       return cacheResult.value;
     }
+    cacheGeneration = cacheResult.generation;
   }
 
   const projectionState = await _readBaseStateFromProjection(safeId, dbClient);
@@ -695,6 +697,7 @@ async function getEscrowStateWithProjection(invoiceId, options = {}) {
         safeId,
         projectionState,
         projectionState.latest_ledger_sequence,
+        cacheGeneration,
       );
     }
     escrowReadCache.set(safeId, projectionState);
@@ -723,7 +726,12 @@ async function getEscrowStateWithProjection(invoiceId, options = {}) {
   };
 
   if (cache) {
-    await cache.setSummary(safeId, state);
+    await cache.setSummary(
+      safeId,
+      state,
+      state.latest_ledger_sequence,
+      cacheGeneration,
+    );
   }
   escrowReadCache.set(safeId, state);
 
