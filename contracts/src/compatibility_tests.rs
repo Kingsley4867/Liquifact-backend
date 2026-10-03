@@ -11,7 +11,7 @@ use soroban_sdk::{
 
 #[cfg(feature = "wasm-tests")]
 #[test]
-fn compiled_wasm_preserves_legacy_lifecycle_and_maximum_amount() {
+fn compiled_wasm_preserves_validated_lifecycle_and_maximum_amount() {
     let env = Env::default();
     env.mock_all_auths();
     let wasm = include_bytes!("../target/wasm32v1-none/release/liquifact_bounty.wasm");
@@ -23,20 +23,21 @@ fn compiled_wasm_preserves_legacy_lifecycle_and_maximum_amount() {
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();
     let asset = StellarAssetClient::new(&env, &token);
-    asset.mint(&creator, &i128::MAX);
+    asset.mint(&creator, &MAX_BOUNTY_AMOUNT);
     let client = BountyContractClient::new(&env, &contract);
-    let first = client.create_bounty(&creator, &hunter, &token, &i128::MAX, &500);
     client.initialize(&recipient);
+    let first = client.create_bounty(&creator, &hunter, &token, &MAX_BOUNTY_AMOUNT, &500);
     assert_eq!(first, 0);
     client.release_bounty(&first);
     let balances = TokenClient::new(&env, &token);
-    assert_eq!(balances.balance(&recipient), i128::MAX / 20);
-    assert_eq!(balances.balance(&hunter), i128::MAX - i128::MAX / 20);
+    let fee = MAX_BOUNTY_AMOUNT / 20;
+    assert_eq!(balances.balance(&recipient), fee);
+    assert_eq!(balances.balance(&hunter), MAX_BOUNTY_AMOUNT - fee);
     assert_eq!(balances.balance(&contract), 0);
     assert!(client.get_bounty(&first).released);
     asset.mint(&creator, &1);
     assert_eq!(client.create_bounty(&creator, &hunter, &token, &1, &0), 1);
-    assert_eq!(client.get_bounty(&first).amount, i128::MAX);
+    assert_eq!(client.get_bounty(&first).amount, MAX_BOUNTY_AMOUNT);
 }
 
 // A token that fails on the hunter transfer lets us exercise a failure after
@@ -413,7 +414,7 @@ fn public_function_specs_keep_legacy_argument_order_and_types() {
         &BountyContract::spec_xdr_initialize(),
         "initialize",
         &[("fee_recipient", ScSpecTypeDef::Address)],
-        &[result_void.clone()],
+        std::slice::from_ref(&result_void),
     );
     check(
         &BountyContract::spec_xdr_create_bounty(),
